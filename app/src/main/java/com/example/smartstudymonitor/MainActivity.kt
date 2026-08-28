@@ -68,9 +68,9 @@ class MainActivity : AppCompatActivity() {
                 .build()
             val faceDetector = FaceDetection.getClient(faceOpts)
 
+            // Single Object Mode for higher precision
             val objOpts = ObjectDetectorOptions.Builder()
                 .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
-                .enableMultipleObjects()
                 .enableClassification()
                 .build()
             val objectDetector = ObjectDetection.getClient(objOpts)
@@ -91,18 +91,28 @@ class MainActivity : AppCompatActivity() {
                                 .addOnSuccessListener { objects ->
                                     val detectedPhones = mutableListOf<DetectedObject>()
                                     
-                                    // Robust Object Check (Class labels or size detection for hand-held items)
                                     for (obj in objects) {
-                                        var isPhone = false
+                                        val bounds = obj.boundingBox
+                                        val objWidth = bounds.width().toFloat()
+                                        val objHeight = bounds.height().toFloat()
+                                        
+                                        // Strict Aspect Ratio check for smartphones (approx 16:9 / 19:9)
+                                        val aspectRatio = if (objWidth > 0) objHeight / objWidth else 0f
+                                        
+                                        var isStrictPhone = false
                                         for (label in obj.labels) {
                                             val text = label.text.lowercase()
-                                            if (text.contains("phone") || text.contains("mobile") || text.contains("device") || text.contains("electronics")) {
-                                                isPhone = true
+                                            val confidence = label.confidence
+
+                                            // Confirmed phone labels only with high confidence
+                                            if ((text == "mobile phone" || text == "cell phone" || text == "telephone") && confidence > 0.5f) {
+                                                isStrictPhone = true
                                                 break
                                             }
                                         }
-                                        // Mobile fallback check by aspect ratio if held close
-                                        if (isPhone || obj.labels.isEmpty()) {
+
+                                        // Only add if explicitly labeled as phone and fits smartphone proportions
+                                        if (isStrictPhone && (aspectRatio in 1.2f..2.5f || aspectRatio in 0.4f..0.8f)) {
                                             detectedPhones.add(obj)
                                         }
                                     }
@@ -153,7 +163,7 @@ class MainActivity : AppCompatActivity() {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
             } catch (exc: Exception) {
-                // Error handling
+                // Exception handling
             }
 
         }, ContextCompat.getMainExecutor(this))
