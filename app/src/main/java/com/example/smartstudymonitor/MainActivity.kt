@@ -30,7 +30,6 @@ class MainActivity : AppCompatActivity() {
     
     private var mediaPlayer: MediaPlayer? = null
     
-    // 3-Second Distraction Timers
     private var activeDistractionState: String = "NONE"
     private var distractionStartTime: Long = 0L
     private val DISTRACTION_HOLD_TIME_MS = 3000L // 3 Seconds Buffer
@@ -122,7 +121,6 @@ class MainActivity : AppCompatActivity() {
                                         .addOnSuccessListener { faces ->
                                             overlayView.setResults(faces, detectedPhones, imageProxy.width, imageProxy.height)
 
-                                            // Determine current frame state
                                             val currentState: String
                                             val soundResId: Int
                                             val statusMsg: String
@@ -145,15 +143,17 @@ class MainActivity : AppCompatActivity() {
                                                     val avgRatio = (leftOpen + rightOpen) / 2.0f
                                                     val ratioPercentage = (avgRatio * 100).toInt()
 
-                                                    if (Math.abs(rotY) > 35) {
+                                                    if (Math.abs(rotY) > 40) {
                                                         currentState = "COVER"
                                                         soundResId = R.raw.cover_face
                                                         statusMsg = "DON'T COVER YOUR FACE!"
-                                                    } else if (avgRatio < 0.2f) { // Closed Eyes Threshold
+                                                    } 
+                                                    // STRICT CHECK: Triggers ONLY when eyes are fully closed (Ratio < 0.08 / 8%)
+                                                    else if (avgRatio < 0.08f) { 
                                                         currentState = "SLEEP"
                                                         soundResId = R.raw.wake_up
                                                         statusMsg = "WAKE UP & STUDY!"
-                                                    } else {
+                                                    } else { // Downward Reading / Studying Normal Mode
                                                         currentState = "NONE"
                                                         soundResId = 0
                                                         statusMsg = "Status: Studying 📖\nEye Ratio: $ratioPercentage%"
@@ -165,7 +165,7 @@ class MainActivity : AppCompatActivity() {
                                                 }
                                             }
 
-                                            // Evaluate State Timers (3 Second Buffer)
+                                            // Timing Buffer Management
                                             if (currentState == "NONE") {
                                                 activeDistractionState = "NONE"
                                                 distractionStartTime = 0L
@@ -175,7 +175,6 @@ class MainActivity : AppCompatActivity() {
                                                     activeDistractionState = currentState
                                                     distractionStartTime = currentTime
                                                 } else {
-                                                    // State continuous duration check
                                                     val elapsedTime = currentTime - distractionStartTime
                                                     if (elapsedTime >= DISTRACTION_HOLD_TIME_MS) {
                                                         triggerVoice(statusMsg, soundResId, currentTime)
@@ -245,4 +244,3 @@ class MainActivity : AppCompatActivity() {
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
     }
 }
-
