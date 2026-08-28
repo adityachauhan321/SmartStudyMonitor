@@ -13,48 +13,72 @@ class OverlayView @JvmOverloads constructor(
 
     private val faces = mutableListOf<Face>()
     private val objects = mutableListOf<DetectedObject>()
-    
-    private val facePaint = Paint().apply {
-        color = Color.CYAN
+    private var imageWidth = 480
+    private var imageHeight = 640
+
+    private val meshPaint = Paint().apply {
+        color = Color.parseColor("#00FFCC")
         style = Paint.Style.STROKE
-        strokeWidth = 3f
+        strokeWidth = 4f
     }
-    
-    private val boxPaint = Paint().apply {
-        color = Color.MAGENTA
+
+    private val phonePaint = Paint().apply {
+        color = Color.parseColor("#FF007F")
         style = Paint.Style.STROKE
-        strokeWidth = 6f
+        strokeWidth = 7f
     }
 
     private val textPaint = Paint().apply {
-        color = Color.MAGENTA
-        textSize = 40f
+        color = Color.parseColor("#FF007F")
+        textSize = 45f
         typeface = Typeface.DEFAULT_BOLD
     }
 
-    fun setResults(detectedFaces: List<Face>, detectedObjects: List<DetectedObject>) {
+    fun setResults(detectedFaces: List<Face>, detectedObjects: List<DetectedObject>, width: Int, height: Int) {
         faces.clear()
         faces.addAll(detectedFaces)
         objects.clear()
         objects.addAll(detectedObjects)
+        imageWidth = width
+        imageHeight = height
         postInvalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Draw Mesh Contours / Landmarks
+        val scaleX = width.toFloat() / imageHeight.toFloat()
+        val scaleY = height.toFloat() / imageWidth.toFloat()
+
+        // 1. Draw Virtual Face Mesh Mesh Lines
         for (face in faces) {
+            val bounds = face.boundingBox
+            val rectF = RectF(
+                width - (bounds.right * scaleX),
+                bounds.top * scaleY,
+                width - (bounds.left * scaleX),
+                bounds.bottom * scaleY
+            )
+            canvas.drawRect(rectF, meshPaint)
+
             for (landmark in face.allLandmarks) {
-                canvas.drawCircle(landmark.position.x, landmark.position.y, 4f, facePaint)
+                val cx = width - (landmark.position.x * scaleX)
+                val cy = landmark.position.y * scaleY
+                canvas.drawCircle(cx, cy, 6f, meshPaint)
             }
         }
 
-        // Draw Object (Phone) Detection Box & Label
+        // 2. Draw Virtual Phone Bounding Box & Tag
         for (obj in objects) {
             val bounds = obj.boundingBox
-            canvas.drawRect(bounds, boxPaint)
-            canvas.drawText("Phone Detected", bounds.left.toFloat(), bounds.top.toFloat() - 10, textPaint)
+            val rectF = RectF(
+                width - (bounds.right * scaleX),
+                bounds.top * scaleY,
+                width - (bounds.left * scaleX),
+                bounds.bottom * scaleY
+            )
+            canvas.drawRect(rectF, phonePaint)
+            canvas.drawText("Phone Detected", rectF.left, rectF.top - 15f, textPaint)
         }
     }
 }
