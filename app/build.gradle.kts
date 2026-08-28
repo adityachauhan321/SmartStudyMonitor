@@ -39,9 +39,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
 
-    // MLKit Face Detection for Eye Ratio calculation
+    // MLKit Face Detection & Object Detection
     implementation("com.google.mlkit:face-detection:16.1.6")
-
-    implementation("com.google.mediapipe:tasks-vision:0.10.14")
-    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    implementation("com.google.mlkit:object-detection:17.0.1")
 }
