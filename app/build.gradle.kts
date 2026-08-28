@@ -39,7 +39,8 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
 
-    // MLKit Face Detection & Object Detection
+    // MLKit Face & Custom Detector
     implementation("com.google.mlkit:face-detection:16.1.6")
     implementation("com.google.mlkit:object-detection:17.0.1")
+    implementation("com.google.mlkit:object-detection-custom:17.0.1")
 }
