@@ -29,8 +29,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     
     private var mediaPlayer: MediaPlayer? = null
+    
+    // 3-Second Distraction Timers
+    private var activeDistractionState: String = "NONE"
+    private var distractionStartTime: Long = 0L
+    private val DISTRACTION_HOLD_TIME_MS = 3000L // 3 Seconds Buffer
+    
     private var lastVoiceTime: Long = 0L
-    private val VOICE_INTERVAL_MS = 4000L
+    private val VOICE_COOLDOWN_MS = 4000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,7 +74,6 @@ class MainActivity : AppCompatActivity() {
                 .build()
             val faceDetector = FaceDetection.getClient(faceOpts)
 
-            // Single Object Mode for higher precision
             val objOpts = ObjectDetectorOptions.Builder()
                 .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
                 .enableClassification()
@@ -95,8 +100,6 @@ class MainActivity : AppCompatActivity() {
                                         val bounds = obj.boundingBox
                                         val objWidth = bounds.width().toFloat()
                                         val objHeight = bounds.height().toFloat()
-                                        
-                                        // Strict Aspect Ratio check for smartphones (approx 16:9 / 19:9)
                                         val aspectRatio = if (objWidth > 0) objHeight / objWidth else 0f
                                         
                                         var isStrictPhone = false
@@ -104,14 +107,12 @@ class MainActivity : AppCompatActivity() {
                                             val text = label.text.lowercase()
                                             val confidence = label.confidence
 
-                                            // Confirmed phone labels only with high confidence
                                             if ((text == "mobile phone" || text == "cell phone" || text == "telephone") && confidence > 0.5f) {
                                                 isStrictPhone = true
                                                 break
                                             }
                                         }
 
-                                        // Only add if explicitly labeled as phone and fits smartphone proportions
                                         if (isStrictPhone && (aspectRatio in 1.2f..2.5f || aspectRatio in 0.4f..0.8f)) {
                                             detectedPhones.add(obj)
                                         }
@@ -121,10 +122,19 @@ class MainActivity : AppCompatActivity() {
                                         .addOnSuccessListener { faces ->
                                             overlayView.setResults(faces, detectedPhones, imageProxy.width, imageProxy.height)
 
+                                            // Determine current frame state
+                                            val currentState: String
+                                            val soundResId: Int
+                                            val statusMsg: String
+
                                             if (detectedPhones.isNotEmpty()) {
-                                                triggerVoice("PUT THE PHONE AWAY!", R.raw.put_phone, currentTime)
+                                                currentState = "PHONE"
+                                                soundResId = R.raw.put_phone
+                                                statusMsg = "PUT THE PHONE AWAY!"
                                             } else if (faces.isEmpty()) {
-                                                triggerVoice("DON'T COVER YOUR FACE!", R.raw.cover_face, currentTime)
+                                                currentState = "COVER"
+                                                soundResId = R.raw.cover_face
+                                                statusMsg = "DON'T COVER YOUR FACE!"
                                             } else {
                                                 val face = faces[0]
                                                 val leftOpen = face.leftEyeOpenProbability ?: -1f
@@ -136,12 +146,43 @@ class MainActivity : AppCompatActivity() {
                                                     val ratioPercentage = (avgRatio * 100).toInt()
 
                                                     if (Math.abs(rotY) > 35) {
-                                                        triggerVoice("DON'T COVER YOUR FACE!", R.raw.cover_face, currentTime)
-                                                    } else if (avgRatio < 0.2f) {
-                                                        triggerVoice("WAKE UP & STUDY!", R.raw.wake_up, currentTime)
+                                                        currentState = "COVER"
+                                                        soundResId = R.raw.cover_face
+                                                        statusMsg = "DON'T COVER YOUR FACE!"
+                                                    } else if (avgRatio < 0.2f) { // Closed Eyes Threshold
+                                                        currentState = "SLEEP"
+                                                        soundResId = R.raw.wake_up
+                                                        statusMsg = "WAKE UP & STUDY!"
+                                                    } else {
+                                                        currentState = "NONE"
+                                                        soundResId = 0
+                                                        statusMsg = "Status: Studying 📖\nEye Ratio: $ratioPercentage%"
+                                                    }
+                                                } else {
+                                                    currentState = "NONE"
+                                                    soundResId = 0
+                                                    statusMsg = "Status: Studying 📖"
+                                                }
+                                            }
+
+                                            // Evaluate State Timers (3 Second Buffer)
+                                            if (currentState == "NONE") {
+                                                activeDistractionState = "NONE"
+                                                distractionStartTime = 0L
+                                                runOnUiThread { tvEyeRatio.text = statusMsg }
+                                            } else {
+                                                if (activeDistractionState != currentState) {
+                                                    activeDistractionState = currentState
+                                                    distractionStartTime = currentTime
+                                                } else {
+                                                    // State continuous duration check
+                                                    val elapsedTime = currentTime - distractionStartTime
+                                                    if (elapsedTime >= DISTRACTION_HOLD_TIME_MS) {
+                                                        triggerVoice(statusMsg, soundResId, currentTime)
                                                     } else {
                                                         runOnUiThread {
-                                                            tvEyeRatio.text = "Status: Studying 📖\nEye Ratio: $ratioPercentage%"
+                                                            val remainingSec = ((DISTRACTION_HOLD_TIME_MS - elapsedTime) / 1000) + 1
+                                                            tvEyeRatio.text = "$statusMsg\nWarning in: ${remainingSec}s"
                                                         }
                                                     }
                                                 }
@@ -173,7 +214,7 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             tvEyeRatio.text = statusText
         }
-        if (currentTime - lastVoiceTime >= VOICE_INTERVAL_MS) {
+        if (currentTime - lastVoiceTime >= VOICE_COOLDOWN_MS) {
             playVoice(soundResId)
             lastVoiceTime = currentTime
         }
