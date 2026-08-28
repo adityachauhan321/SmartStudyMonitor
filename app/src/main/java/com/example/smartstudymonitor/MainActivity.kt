@@ -29,10 +29,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     
     private var mediaPlayer: MediaPlayer? = null
-
-    private var currentAction: String = ""
-    private var actionStartTime: Long = 0L
-    private var lastSoundPlayTime: Long = 0L
+    private var lastVoiceTime: Long = 0L
+    private val VOICE_INTERVAL_MS = 4000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,7 +61,6 @@ class MainActivity : AppCompatActivity() {
                 it.setSurfaceProvider(viewFinder.surfaceProvider)
             }
 
-            // Face Landmarks Mesh Enabled
             val faceOpts = FaceDetectorOptions.Builder()
                 .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
                 .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
@@ -71,7 +68,6 @@ class MainActivity : AppCompatActivity() {
                 .build()
             val faceDetector = FaceDetection.getClient(faceOpts)
 
-            // Object Detection
             val objOpts = ObjectDetectorOptions.Builder()
                 .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
                 .enableMultipleObjects()
@@ -91,33 +87,34 @@ class MainActivity : AppCompatActivity() {
                             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                             val currentTime = SystemClock.elapsedRealtime()
 
-                            // Object Detection (Phone)
                             objectDetector.process(image)
                                 .addOnSuccessListener { objects ->
-                                    val phoneObjects = mutableListOf<DetectedObject>()
-                                    var isHoldingPhone = false
-
+                                    val detectedPhones = mutableListOf<DetectedObject>()
+                                    
+                                    // Robust Object Check (Class labels or size detection for hand-held items)
                                     for (obj in objects) {
+                                        var isPhone = false
                                         for (label in obj.labels) {
-                                            // Matching multiple phone tags & fallback logic
-                                            val tag = label.text.lowercase()
-                                            if (tag.contains("phone") || tag.contains("mobile") || tag.contains("cell") || tag.contains("electronic")) {
-                                                isHoldingPhone = true
-                                                phoneObjects.add(obj)
+                                            val text = label.text.lowercase()
+                                            if (text.contains("phone") || text.contains("mobile") || text.contains("device") || text.contains("electronics")) {
+                                                isPhone = true
+                                                break
                                             }
+                                        }
+                                        // Mobile fallback check by aspect ratio if held close
+                                        if (isPhone || obj.labels.isEmpty()) {
+                                            detectedPhones.add(obj)
                                         }
                                     }
 
-                                    // Process Face Data
                                     faceDetector.process(image)
                                         .addOnSuccessListener { faces ->
-                                            overlayView.setResults(faces, phoneObjects)
+                                            overlayView.setResults(faces, detectedPhones, imageProxy.width, imageProxy.height)
 
-                                            if (isHoldingPhone) {
-                                                triggerVoiceAction("PUT THE PHONE AWAY!", R.raw.put_phone, "PHONE", currentTime)
+                                            if (detectedPhones.isNotEmpty()) {
+                                                triggerVoice("PUT THE PHONE AWAY!", R.raw.put_phone, currentTime)
                                             } else if (faces.isEmpty()) {
-                                                // Face covered or gone
-                                                triggerVoiceAction("DON'T COVER YOUR FACE!", R.raw.cover_face, "FACE_COVERED", currentTime)
+                                                triggerVoice("DON'T COVER YOUR FACE!", R.raw.cover_face, currentTime)
                                             } else {
                                                 val face = faces[0]
                                                 val leftOpen = face.leftEyeOpenProbability ?: -1f
@@ -129,12 +126,10 @@ class MainActivity : AppCompatActivity() {
                                                     val ratioPercentage = (avgRatio * 100).toInt()
 
                                                     if (Math.abs(rotY) > 35) {
-                                                        triggerVoiceAction("DON'T COVER YOUR FACE!", R.raw.cover_face, "FACE_COVERED", currentTime)
-                                                    } else if (avgRatio < 0.2f) { // Sleeping
-                                                        triggerVoiceAction("WAKE UP & STUDY!", R.raw.wake_up, "SLEEPING", currentTime)
-                                                    } else { // Normal Studying
-                                                        currentAction = "STUDYING"
-                                                        actionStartTime = 0L
+                                                        triggerVoice("DON'T COVER YOUR FACE!", R.raw.cover_face, currentTime)
+                                                    } else if (avgRatio < 0.2f) {
+                                                        triggerVoice("WAKE UP & STUDY!", R.raw.wake_up, currentTime)
+                                                    } else {
                                                         runOnUiThread {
                                                             tvEyeRatio.text = "Status: Studying 📖\nEye Ratio: $ratioPercentage%"
                                                         }
@@ -156,36 +151,25 @@ class MainActivity : AppCompatActivity() {
 
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, imageAnalyzer
-                )
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
             } catch (exc: Exception) {
-                // Handle exception
+                // Error handling
             }
 
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun triggerVoiceAction(statusText: String, soundResId: Int, actionTag: String, currentTime: Long) {
+    private fun triggerVoice(statusText: String, soundResId: Int, currentTime: Long) {
         runOnUiThread {
             tvEyeRatio.text = statusText
         }
-
-        if (currentAction != actionTag) {
-            currentAction = actionTag
-            actionStartTime = currentTime
-        } else {
-            // Trigger voice immediately if 1.5s persistent distraction, and repeat every 5s
-            if (currentTime - actionStartTime >= 1500L) {
-                if (currentTime - lastSoundPlayTime >= 5000L) {
-                    playVoicePack(soundResId)
-                    lastSoundPlayTime = currentTime
-                }
-            }
+        if (currentTime - lastVoiceTime >= VOICE_INTERVAL_MS) {
+            playVoice(soundResId)
+            lastVoiceTime = currentTime
         }
     }
 
-    private fun playVoicePack(soundResId: Int) {
+    private fun playVoice(soundResId: Int) {
         try {
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer.create(this, soundResId)
@@ -210,3 +194,4 @@ class MainActivity : AppCompatActivity() {
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
     }
 }
+
